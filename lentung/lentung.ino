@@ -1,120 +1,171 @@
+#include <ArduinoWebsockets.h>
 #include <ESP8266WiFi.h>
 #include <Wire.h>
 #include <U8g2lib.h>
+
+using namespace websockets;
+
+// Konfigurasi WiFi
+const char* ssid = "Pakdiyaa2";       // Ganti dengan SSID WiFi Anda
+const char* password = "belikodata";  // Ganti dengan password WiFi Anda
+const char* websockets_server_host = "192.168.7.130"; // Ganti dengan IP server WebSocket
+const uint16_t websockets_server_port = 8765; // Port server WebSocket
 
 // Konfigurasi OLED
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
-// Konfigurasi WiFi
-const char* ssid = "Pakdiyaa2";
-const char* password = "belikodata";
-
-// URL endpoint server
-const char* serverIP = "192.168.7.130";
-const int serverPort = 5000;
-const String baseURL = "http://" + String(serverIP) + ":" + String(serverPort);
-
 // Pin tombol
-const int buttonLeftPin = 12;
-const int buttonRightPin = 14;
+const int buttonLeftPin = 14;
+const int buttonRightPin = 12;
 const int buttonTogglePowerpointPin = 13;
 
-// Variabel untuk menyimpan status tombol
-bool buttonLeftState = false;
-bool buttonRightState = false;
-bool buttonTogglePowerpointState = false;
+// WebSocket client
+WebsocketsClient client;
 
-void setup() {
-  Serial.begin(115200);
+// Variabel status
+bool isConnected = false;
 
-  // Setup OLED
-  Wire.begin();  // Inisialisasi koneksi I2C
-  u8g2.begin();
+void sendMessage(const String& message) {
+    // Kirim pesan ke server WebSocket
+    client.send(message);
 
-  // Setup WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    // Update OLED display with animated dots
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(0, 20);
-    u8g2.print("Connecting to WiFi");
-    u8g2.print(".");
-    u8g2.sendBuffer();
-    delay(500);
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(0, 20);
-    u8g2.print("Connecting to WiFi");
-    u8g2.sendBuffer();
-    delay(500);
-  }
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
-  u8g2.print("Connected to WiFi");
-  u8g2.sendBuffer();
-  
-  // Setup tombol
-  pinMode(buttonLeftPin, INPUT_PULLUP);
-  pinMode(buttonRightPin, INPUT_PULLUP);
-  pinMode(buttonTogglePowerpointPin, INPUT_PULLUP);
+    // Atur callback untuk menangani pesan yang diterima
+    client.onMessage([&](WebsocketsMessage receivedMessage) {
+        Serial.print("Received Message: ");
+        Serial.println(receivedMessage.data());
+
+        // Cek apakah pesan mengandung kunci 'error'
+        if (receivedMessage.data().indexOf("\"error\":") >= 0) {
+            handleError(receivedMessage.data());
+        } else {
+            handleMessage(receivedMessage.data());
+        }
+    });
 }
 
-// Mengirim request ke server
-void sendRequest(String endpoint) {
-  WiFiClient client;
-  if (!client.connect(serverIP, serverPort)) {
-    Serial.println("Connection failed");
-    return;
-  }
-  
-  client.print(String("POST ") + endpoint + " HTTP/1.1\r\n" +
-               "Host: " + serverIP + "\r\n" +
-               "Connection: close\r\n" +
-               "\r\n");
+void handleMessage(const String& message) {
+    int messageStartIndex = message.indexOf("'message': '") + 12;
+    int messageEndIndex = message.indexOf("'", messageStartIndex);
 
-  // Tunggu response
-  String response = "";
-  while(client.connected() || client.available()) {
-    if (client.available()) {
-      response += client.readString();
+    if (messageStartIndex > 0 && messageEndIndex > messageStartIndex) {
+        String messageValue = message.substring(messageStartIndex, messageEndIndex);
+        Serial.print("Message: ");
+        Serial.println(messageValue);
+
+        u8g2.clearBuffer();
+        u8g2.setCursor(0, 20);
+        u8g2.print("Message: ");
+        u8g2.setCursor(0, 35);
+        u8g2.print(messageValue);
+        u8g2.sendBuffer();
+    } else {
+        Serial.println("Message not found.");
     }
-  }
-  
-  // Tampilkan request dan response di OLED
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, 10);
-  u8g2.print("Request:");
-  u8g2.setCursor(0, 20);
-  u8g2.print(endpoint);
-  u8g2.setCursor(0, 30);
-  u8g2.print("Response:");
-  u8g2.setCursor(0, 40);
-  u8g2.print(response.substring(0, 64)); // Batasi panjang respons untuk menyesuaikan dengan layar
-  u8g2.sendBuffer();
-  delay(2000);  // Tampilkan selama 2 detik
+}
+
+void handleError(const String& message) {
+    // Temukan posisi kunci 'error' dan tanda kutip penutup
+    int errorStartIndex = message.indexOf("\"error\": \"") + 10;  // 10 adalah panjang dari "\"error\": \""
+    int errorEndIndex = message.indexOf("\"", errorStartIndex);
+
+    // Ambil nilai dari kunci 'error'
+    if (errorStartIndex > 0 && errorEndIndex > errorStartIndex) {
+        String errorValue = message.substring(errorStartIndex, errorEndIndex);
+        Serial.print("Error: ");
+        Serial.println(errorValue);
+
+        // Tampilkan isi pesan pada OLED
+        u8g2.clearBuffer();
+        u8g2.setCursor(0, 20);
+        u8g2.print("Error: ");
+        u8g2.print(errorValue);
+        u8g2.sendBuffer();
+    } else {
+        Serial.println("Invalid error format.");
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    // Setup OLED
+    Wire.begin();  // Inisialisasi koneksi I2C
+    u8g2.begin();
+    
+    // Setup tombol
+    pinMode(buttonLeftPin, INPUT_PULLUP);
+    pinMode(buttonRightPin, INPUT_PULLUP);
+    pinMode(buttonTogglePowerpointPin, INPUT_PULLUP);
+
+    // Connect to WiFi
+    u8g2.clearBuffer(); 
+    u8g2.setFont(u8g2_font_ncenB08_tr);
+    u8g2.setCursor(0, 20);
+    u8g2.print("Connecting to WiFi...");
+    u8g2.sendBuffer();
+    
+    WiFi.begin(ssid, password);
+
+    // Wait for WiFi connection
+    for (int i = 0; i < 10 && WiFi.status() != WL_CONNECTED; i++) {
+        delay(1000);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        u8g2.clearBuffer();
+        u8g2.setCursor(0, 20);
+        u8g2.print("WiFi Connected");
+        u8g2.sendBuffer();
+        Serial.println("Connected to WiFi, Connecting to WebSocket server.");
+
+        // Connect to WebSocket server
+        bool connected = client.connect(websockets_server_host, websockets_server_port, "/");
+        if (connected) {
+            isConnected = true;
+            u8g2.clearBuffer();
+            u8g2.setCursor(0, 20);
+            u8g2.print("WebSocket Connected");
+            u8g2.sendBuffer();
+            sendMessage("Hello Lentung");
+        } else {
+            u8g2.clearBuffer();
+            u8g2.setCursor(0, 20);
+            u8g2.print("WS Connection Failed");
+            u8g2.sendBuffer();
+            Serial.println("Connection failed!");
+        }
+        
+        // Callback when messages are received
+    } else {
+        u8g2.clearBuffer();
+        u8g2.setCursor(0, 20);
+        u8g2.print("WiFi Connection Failed");
+        u8g2.sendBuffer();
+        Serial.println("No Wifi!");
+    }
 }
 
 void loop() {
-  // Membaca status tombol
-  buttonLeftState = digitalRead(buttonLeftPin) == LOW;
-  buttonRightState = digitalRead(buttonRightPin) == LOW;
-  buttonTogglePowerpointState = digitalRead(buttonTogglePowerpointPin) == LOW;
-  
-  // Kirim request berdasarkan tombol yang ditekan
-  if (buttonLeftState) {
-    sendRequest("/press_left");
-    // delay(500);  // Debounce
-  }
-  if (buttonRightState) {
-    sendRequest("/press_right");
-    // delay(500);  // Debounce
-  }
-  if (buttonTogglePowerpointState) {
-    sendRequest("/toggle_powerpoint");
-    // delay(500);  // Debounce
-  }
+    // Handle WebSocket messages
+    if (client.available()) {
+        client.poll();
+    }
+
+    // Check button states and send WebSocket messages
+    if (digitalRead(buttonLeftPin) == LOW) {
+        sendMessage("left");
+        delay(100);  // Debounce
+    }
+    if (digitalRead(buttonRightPin) == LOW) {
+        sendMessage("right");
+        delay(100);  // Debounce
+    }
+    if (digitalRead(buttonTogglePowerpointPin) == LOW) {
+        sendMessage("toggle_powerpoint");
+        delay(100);  // Debounce
+    }
+
+    delay(50); // Small delay to avoid rapid polling
 }

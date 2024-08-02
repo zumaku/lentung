@@ -1,17 +1,15 @@
-from flask import Flask, request, jsonify
+import asyncio
+import websockets
+import logging
 from pynput.keyboard import Controller, Key
 from pywinauto import Desktop, Application
-import logging
-import time
 
 # Konfigurasi logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-app = Flask(__name__)
-keyboard = Controller()
-
 # Variabel untuk menyimpan status jendela PowerPoint
 is_open = True
+keyboard = Controller()
 
 def find_powerpoint_window():
     try:
@@ -25,92 +23,66 @@ def find_powerpoint_window():
         logging.error(f"Failed to find PowerPoint window: {str(e)}")
         return None
 
-@app.before_request
-def log_request_info():
-    logging.info(f'Request Headers: {request.headers}')
-    logging.info(f'Request Body: {request.get_data()}')
-
-@app.after_request
-def log_response_info(response):
-    logging.info(f'Response Status: {response.status}')
-    logging.info(f'Response Body: {response.get_data()}')
-    return response
-
-@app.route('/press_right', methods=['POST'])
-def press_right():
-    try:
-        keyboard.press(Key.right)
-        keyboard.release(Key.right)
-        message = {"message": "Pressed right arrow key"}
-        logging.info(message)
-        return jsonify(message), 200
-    except Exception as e:
-        error_message = {"error": str(e)}
-        logging.error(error_message)
-        return jsonify(error_message), 500
-
-@app.route('/press_left', methods=['POST'])
-def press_left():
-    try:
-        keyboard.press(Key.left)
-        keyboard.release(Key.left)
-        message = {"message": "Pressed left arrow key"}
-        logging.info(message)
-        return jsonify(message), 200
-    except Exception as e:
-        error_message = {"error": str(e)}
-        logging.error(error_message)
-        return jsonify(error_message), 500
-
-def find_powerpoint_window():
-    try:
-        # Mencari jendela utama PowerPoint
-        app_window = Desktop(backend="uia").window(title_re=".*PowerPoint.*")
-        return app_window if app_window.exists() else None
-    except Exception as e:
-        logging.error(f"Failed to find PowerPoint window: {str(e)}")
-        return None
-
-@app.route('/toggle_powerpoint', methods=['POST'])
-def toggle_powerpoint():
+async def handle_connection(websocket, path):
     global is_open
     try:
-        if is_open:
-            # Keluar dari slideshow dengan ESC
-            keyboard.press(Key.esc)
-            keyboard.release(Key.esc)
+        async for message in websocket:
 
-            app_window = find_powerpoint_window()
-            if not app_window:
-                return jsonify({"error": "PowerPoint window not found"}), 404
+            # Switch case the message
+            match message:
+                case "Hello Lentung":
+                    response = {"message": "Hello Lentungers"}
+                case "left":
+                    keyboard.press(Key.left)
+                    keyboard.release(Key.left)
+                    response = {"message": "Pressed left arrow key"}
+                case "right":
+                    keyboard.press(Key.right)
+                    keyboard.release(Key.right)
+                    response = {"message": "Pressed right arrow key"}
+                case "toggle_powerpoint":
+                    if is_open:
+                        # Keluar dari slideshow dengan ESC
+                        keyboard.press(Key.esc)
+                        keyboard.release(Key.esc)
 
-            app_window.minimize()
-            message = {"message": "Minimized PowerPoint window"}
-        else:
-            app_window = find_powerpoint_window()
-            if not app_window:
-                return jsonify({"error": "PowerPoint window not found"}), 404
+                        app_window = find_powerpoint_window()
+                        if not app_window:
+                            response = {"error": "PowerPoint window not found"}
+                        else:
+                            app_window.minimize()
+                            response = {"message": "Minimized PowerPoint window"}
+                    else:
+                        app_window = find_powerpoint_window()
+                        if not app_window:
+                            response = {"error": "PowerPoint window not found"}
+                        else:
+                            app_window.restore()
+                            app_window.maximize()  # Memastikan jendela di-maximize
+                            app_window.set_focus()
 
-            app_window.restore()
-            app_window.maximize()  # Memastikan jendela di-maximize
-            app_window.set_focus()
+                            # Masuk kembali ke mode slideshow dengan F5
+                            keyboard.press(Key.f5)
+                            keyboard.release(Key.f5)
 
-            # Masuk kembali ke mode slideshow dengan F5
-            keyboard.press(Key.f5)
-            keyboard.release(Key.f5)
+                            response = {"message": "Restored PowerPoint and entered slideshow mode"}
 
-            message = {"message": "Restored PowerPoint and entered slideshow mode"}
+                    is_open = not is_open
+                case _:
+                    response = {"error": "Unknown command"}
 
-        is_open = not is_open
-        logging.info(message)
-        return jsonify(message), 200
+            logging.info(f"Response: {response}")
+            await websocket.send(str(response))
 
     except Exception as e:
         error_message = {"error": str(e)}
         logging.error(error_message)
-        return jsonify(error_message), 500
+        await websocket.send(str(error_message))
+
+async def main():
+    async with websockets.serve(handle_connection, "0.0.0.0", 8765):
+        logging.info("WebSocket server started")
+        await asyncio.Future()  # Run forever
 
 if __name__ == '__main__':
-    # Jalankan server pada port 5000 dan dapat diakses oleh seluruh perangkat di dalam jaringan
-    logging.info("Starting the server...")
-    app.run(host='0.0.0.0', port=5000)
+    asyncio.run(main())
