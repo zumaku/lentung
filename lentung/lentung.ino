@@ -163,7 +163,7 @@ void loop() {
         delay(100);  // Debounce
     }
     if (digitalRead(buttonTogglePowerpointPin) == LOW) {
-        sendMessage("toggle_powerpoint");
+        sendMessage("swipe");
         delay(100);  // Debounce
     }
 
