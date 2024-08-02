@@ -18,19 +18,19 @@ async def handle_connection(websocket, path):
             # Switch case the message
             match message:
                 case "Hello Lentung":
-                    response = {"message": "Hello Lentungers"}
+                    response = {"message": "Hi Lentunger"}
                 case "left":
                     if is_open:
                         keyboard.press_and_release('left')
-                        response = {"message": "Pressed left arrow key"}
+                        response = {"message": "Presed Left"}
                     else:
-                        response = {"message": "!Pressed left arrow key"}
+                        response = {"message": "Can't Presed"}
                 case "right":
                     if is_open:
                         keyboard.press_and_release('right')
-                        response = {"message": "Pressed right arrow key"}
+                        response = {"message": "Presed Right"}
                     else:
-                        response = {"message": "!Pressed right arrow key"}
+                        response = {"message": "Can't Presed"}
                 case "swipe":
                     if is_open:
                         keyboard.press_and_release('ctrl+windows+left')
@@ -43,7 +43,7 @@ async def handle_connection(websocket, path):
                         
                     
                 case _:
-                    response = {"error": "Unknown command"}
+                    response = {"error": "Firmware Err"}
 
             logging.info(f"Response: {response}")
             await websocket.send(str(response))

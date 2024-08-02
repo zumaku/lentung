@@ -17,15 +17,17 @@ const uint16_t websockets_server_port = 8765; // Port server WebSocket
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 // Pin tombol
-const int buttonLeftPin = 14;
-const int buttonRightPin = 12;
-const int buttonTogglePowerpointPin = 13;
+const short buttonLeftPin = 14;
+const short buttonRightPin = 12;
+const short buttonTogglePowerpointPin = 13;
 
 // WebSocket client
 WebsocketsClient client;
 
 // Variabel status
 bool isConnected = false;
+short counter = 0;
+String status_text = "Hi Lentunger";
 
 void sendMessage(const String& message) {
     // Kirim pesan ke server WebSocket
@@ -50,18 +52,12 @@ void handleMessage(const String& message) {
     int messageEndIndex = message.indexOf("'", messageStartIndex);
 
     if (messageStartIndex > 0 && messageEndIndex > messageStartIndex) {
-        String messageValue = message.substring(messageStartIndex, messageEndIndex);
+        status_text = message.substring(messageStartIndex, messageEndIndex);
         Serial.print("Message: ");
-        Serial.println(messageValue);
-
-        u8g2.clearBuffer();
-        u8g2.setCursor(0, 20);
-        u8g2.print("Message: ");
-        u8g2.setCursor(0, 35);
-        u8g2.print(messageValue);
-        u8g2.sendBuffer();
+        Serial.println(status_text);
     } else {
-        Serial.println("Message not found.");
+        status_text = "Firmware Err";
+        Serial.println("[Firmware Err] => Message not found.");
     }
 }
 
@@ -73,17 +69,13 @@ void handleError(const String& message) {
     // Ambil nilai dari kunci 'error'
     if (errorStartIndex > 0 && errorEndIndex > errorStartIndex) {
         String errorValue = message.substring(errorStartIndex, errorEndIndex);
-        Serial.print("Error: ");
+        Serial.print("[Firmware Err] => ");
         Serial.println(errorValue);
-
-        // Tampilkan isi pesan pada OLED
-        u8g2.clearBuffer();
-        u8g2.setCursor(0, 20);
-        u8g2.print("Error: ");
-        u8g2.print(errorValue);
-        u8g2.sendBuffer();
+        status_text = "Firmware Err";
+        Serial.println("[Firmware Err] => Invalid error format.");
     } else {
-        Serial.println("Invalid error format.");
+        status_text = "Firmware Err";
+        Serial.println("[Firmware Err] => Invalid error format.");
     }
 }
 
@@ -100,11 +92,7 @@ void setup() {
     pinMode(buttonTogglePowerpointPin, INPUT_PULLUP);
 
     // Connect to WiFi
-    u8g2.clearBuffer(); 
-    u8g2.setFont(u8g2_font_ncenB08_tr);
-    u8g2.setCursor(0, 20);
-    u8g2.print("Connecting to WiFi...");
-    u8g2.sendBuffer();
+    displayAnimation("Conecting");
     
     WiFi.begin(ssid, password);
 
@@ -114,35 +102,21 @@ void setup() {
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        u8g2.clearBuffer();
-        u8g2.setCursor(0, 20);
-        u8g2.print("WiFi Connected");
-        u8g2.sendBuffer();
         Serial.println("Connected to WiFi, Connecting to WebSocket server.");
 
         // Connect to WebSocket server
         bool connected = client.connect(websockets_server_host, websockets_server_port, "/");
         if (connected) {
             isConnected = true;
-            u8g2.clearBuffer();
-            u8g2.setCursor(0, 20);
-            u8g2.print("WebSocket Connected");
-            u8g2.sendBuffer();
-            sendMessage("Hello Lentung");
+            displayAnimation("Hi Lentunger");
         } else {
-            u8g2.clearBuffer();
-            u8g2.setCursor(0, 20);
-            u8g2.print("WS Connection Failed");
-            u8g2.sendBuffer();
+            displayAnimation("Cant Conect");
             Serial.println("Connection failed!");
         }
         
         // Callback when messages are received
     } else {
-        u8g2.clearBuffer();
-        u8g2.setCursor(0, 20);
-        u8g2.print("WiFi Connection Failed");
-        u8g2.sendBuffer();
+        displayAnimation("Cant Conect");
         Serial.println("No Wifi!");
     }
 }
@@ -167,5 +141,5 @@ void loop() {
         delay(100);  // Debounce
     }
 
-    delay(50); // Small delay to avoid rapid polling
+    displayAnimation(status_text);
 }
